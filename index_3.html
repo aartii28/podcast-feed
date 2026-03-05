@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyRec — Your Podcast Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: #f9f7f4; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes dotPulse { 0%,80%,100%{opacity:.2;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
+  @keyframes fadeSlide { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+  .fade-in { animation: fadeSlide 0.25s ease forwards; }
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #f0ebe3; } ::-webkit-scrollbar-thumb { background: #c8b89a; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── DATA ────────────────────────────────────────────────────────────────────
+
+const DAILY_SHOWS = [
+  { name:"My First Million",      topic:"startup", rss:"https://feeds.megaphone.fm/mfm",                    url:"https://open.spotify.com/show/4LnBHXUg3HhSXMRa5opYU7" },
+  { name:"How I Built This",      topic:"startup", rss:"https://feeds.simplecast.com/MnOCVCWC",             url:"https://podcasts.apple.com/podcast/how-i-built-this/id1150510297" },
+  { name:"Indie Hackers",         topic:"startup", rss:"https://feeds.simplecast.com/XA_851k3",             url:"https://www.indiehackers.com/podcast" },
+  { name:"Practical AI",          topic:"ai",      rss:"https://changelog.com/practicalai/feed",            url:"https://changelog.com/practicalai" },
+  { name:"The AI Breakdown",      topic:"ai",      rss:"https://feeds.megaphone.fm/aibreakdown",            url:"https://podcasts.apple.com/podcast/the-ai-breakdown/id1680633614" },
+];
+
+const WEEKLY_SHOWS = [
+  { name:"Lenny's Podcast",       topic:"startup", rss:"https://feeds.simplecast.com/2Rl0XIYB",            url:"https://www.lennyspodcast.com/",                  why:"Deep operator playbooks on product, growth, and revenue leadership." },
+  { name:"Lex Fridman Podcast",   topic:"ai",      rss:"https://lexfridman.com/feed/podcast/",             url:"https://lexfridman.com/podcast",                  why:"Long-form conversations with the world's top AI researchers and founders." },
+  { name:"TWIML AI Podcast",      topic:"ai",      rss:"https://twimlai.com/feed/podcast/",                url:"https://twimlai.com/podcast/twimlai/",             why:"Practitioner-level AI — how companies actually build and ship ML products." },
+  { name:"The Tim Ferriss Show",  topic:"startup", rss:"https://rss.art19.com/tim-ferriss-show",           url:"https://tim.blog/podcast/",                       why:"Systems, habits, and mental models from world-class performers." },
+];
+
+const MUST_LISTENS = [
+  { name:"Analytics Power Hour",       tag:"Digital Analytics",  icon:"📈", url:"https://analyticshour.io/",                                                           why:"The only podcast made exclusively for digital analytics practitioners. Your MeasureSummit world, in audio." },
+  { name:"Marketing Against The Grain",tag:"Marketing & Growth",  icon:"📣", url:"https://podcasts.apple.com/podcast/marketing-against-the-grain/id1616266688",         why:"Kipp and Kieran from HubSpot break down real, unconventional growth strategies. Essential for your marketing lens." },
+  { name:"The Revenue Formula",        tag:"Revenue & CRO",       icon:"💰", url:"https://podcasts.apple.com/podcast/the-revenue-formula/id1641539146",                  why:"Revenue architecture, GTM strategy, sales-marketing alignment. Directly relevant to CRO thinking." },
+  { name:"Lenny's Podcast",            tag:"Product & Startups",  icon:"🧠", url:"https://www.lennyspodcast.com/",                                                      why:"If you're building SoulSpace Kit or thinking about revenue leadership — this is your closest advisor in podcast form." },
+  { name:"How I Built This",           tag:"Entrepreneurship",    icon:"🏗️", url:"https://podcasts.apple.com/podcast/how-i-built-this/id1150510297",                    why:"Every episode is a masterclass in resilience and building from zero. Non-negotiable for any founder." },
+  { name:"Data Skeptic",               tag:"Analytics & Data",    icon:"📊", url:"https://dataskeptic.com/",                                                            why:"Rigorous data science thinking without being too academic. Keeps your analytics edge sharp." },
+];
+
+const FALLBACK = {
+  "My First Million":     { title:"10 Business Ideas We'd Start Tomorrow",                       desc:"Sam and Shaan riff on real business opportunities hiding in plain sight — from niche SaaS to physical products. Includes their actual research process and why most people overcomplicate ideation.", date:"Mar 2025", dur:"58 min" },
+  "How I Built This":     { title:"Spanx: Sara Blakely on Building a Billion-Dollar Brand",      desc:"Sara Blakely built Spanx from $5,000 in savings with zero business experience and no outside funding. The full story of how she sold the idea to Neiman Marcus on a cold call and never looked back.", date:"Mar 2025", dur:"52 min" },
+  "Indie Hackers":        { title:"From $0 to $50K MRR: The Bootstrapped Playbook",              desc:"A founder breaks down her exact playbook for growing a SaaS to $50K MRR without raising capital — covering content strategy, cold outreach, and the pricing change that 3x'd revenue overnight.", date:"Feb 2025", dur:"44 min" },
+  "Practical AI":         { title:"LLMs in Marketing Analytics: A Practitioner's Guide",         desc:"How marketing teams are using large language models to automate campaign analysis, build insight reports, and surface anomalies from messy data pipelines — no engineering background needed.", date:"Mar 2025", dur:"38 min" },
+  "The AI Breakdown":     { title:"How Enterprises Are Really Using AI in 2025",                 desc:"Real case studies from Fortune 500s on AI deployment across operations, customer service, and analytics. The episode is refreshingly honest about where AI underdelivers — and what to do differently.", date:"Mar 2025", dur:"29 min" },
+  "Lenny's Podcast":      { title:"What Great Chief Revenue Officers Actually Do",               desc:"A masterclass on revenue architecture — how the best CROs think about the first 90 days, aligning sales and marketing, building a repeatable GTM motion, and the metrics that actually matter.", date:"Feb 2025", dur:"71 min" },
+  "Lex Fridman Podcast":  { title:"Sam Altman on AGI, OpenAI and the Next Decade",              desc:"Sam Altman and Lex go deep on AGI timelines, the philosophy of responsible deployment, what happens when AI surpasses human-level reasoning, and why he thinks the next 10 years are unlike anything before.", date:"Mar 2025", dur:"3h 8m" },
+  "TWIML AI Podcast":     { title:"Building AI Products That Actually Ship",                     desc:"Why most AI projects fail in production — and what teams at Stripe, Figma and Notion do differently. Covers model evaluation, prompt engineering at scale, and measuring ROI on AI investments.", date:"Feb 2025", dur:"55 min" },
+  "The Tim Ferriss Show": { title:"Systems, Delegation and the Minimum Effective Dose",          desc:"Three founders share the operating systems behind their high-output lives — calendar blocking, the art of saying no, delegation frameworks, and why doing less is often the highest-leverage move.", date:"Feb 2025", dur:"1h 32m" },
+};
+
+// ─── RSS FETCH ────────────────────────────────────────────────────────────────
+
+async function tryFetchRSS(show) {
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(show.rss)}`,
+    `https://corsproxy.io/?${encodeURIComponent(show.rss)}`,
+  ];
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) continue;
+      const data = await res.json().catch(() => null);
+      const xmlText = data ? (data.contents || "") : await res.text();
+      if (!xmlText) continue;
+      const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+      const item = xml.querySelector("item");
+      if (!item) continue;
+      const title = item.querySelector("title")?.textContent?.trim() || "";
+      const rawDesc = item.querySelector("description")?.textContent || item.querySelector("summary")?.textContent || "";
+      const tmp = document.createElement("div"); tmp.innerHTML = rawDesc;
+      const desc = (tmp.textContent || "").trim().slice(0, 420) + "…";
+      const pubDate = item.querySelector("pubDate")?.textContent || "";
+      const date = pubDate ? new Date(pubDate).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }) : "";
+      const dur = item.querySelector("duration")?.textContent?.trim() || "";
+      const epUrl = item.querySelector("link")?.textContent || show.url;
+      if (title) return { title, desc, date, dur, epUrl };
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
+// ─── AI SUMMARY ───────────────────────────────────────────────────────────────
+
+// ─── API KEY MANAGEMENT ───────────────────────────────────────────────────────
+
+let _apiKey = null;
+
+function getStoredKey() {
+  try { return sessionStorage.getItem("dr_api_key") || null; } catch(e) { return null; }
+}
+function storeKey(k) {
+  try { sessionStorage.setItem("dr_api_key", k); } catch(e) {}
+  _apiKey = k;
+}
+function clearKey() {
+  try { sessionStorage.removeItem("dr_api_key"); } catch(e) {}
+  _apiKey = null;
+}
+
+// Promise-based prompt for API key
+let _keyResolve = null;
+let _setShowKeyModal = null;
+
+function registerKeyModal(setter) { _setShowKeyModal = setter; }
+
+function requestApiKey() {
+  return new Promise(resolve => {
+    _keyResolve = resolve;
+    if (_setShowKeyModal) _setShowKeyModal(true);
+  });
+}
+
+function resolveKey(key) {
+  if (_keyResolve) { _keyResolve(key); _keyResolve = null; }
+  if (_setShowKeyModal) _setShowKeyModal(false);
+}
+
+async function getApiKey() {
+  if (_apiKey) return _apiKey;
+  const stored = getStoredKey();
+  if (stored) { _apiKey = stored; return _apiKey; }
+  const key = await requestApiKey();
+  if (key) { storeKey(key); return key; }
+  return null;
+}
+
+// ─── AI SUMMARY ───────────────────────────────────────────────────────────────
+
+async function getSummary(ep) {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    return {
+      hook: "Add your Anthropic API key to enable AI summaries.",
+      summary: ep.desc,
+      takeaways: ["Click '✦ AI Summary' again and enter your API key", "Get a free key at console.anthropic.com", "Key is saved for your session — enter once per visit"],
+      whoFor: "Anyone who adds their API key above.",
+      skipIf: "You haven't added your API key yet.",
+    };
+  }
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system: `You are an expert podcast summariser for a professional in digital analytics, marketing, entrepreneurship, and building startups. Return ONLY valid JSON (no markdown, no extra text) with these exact keys:
+- "hook": one punchy sentence (max 18 words) that makes someone want to listen immediately
+- "summary": 3-4 sentences covering core ideas, specific frameworks or stories mentioned, and the main argument
+- "takeaways": array of exactly 3 takeaways — specific, actionable, max 16 words each
+- "whoFor": one sentence on exactly who will get the most from this episode
+- "skipIf": one honest sentence on who can safely skip this one`,
+        messages: [{ role: "user", content: `Podcast: ${ep.show}\nEpisode: ${ep.title}\nDescription: ${ep.desc}` }],
+      }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.content?.[0]?.text || "";
+    return JSON.parse(text.replace(/```json|```/g, "").trim());
+  } catch(e) {
+    if (e.message?.includes("auth") || e.message?.includes("key") || e.message?.includes("401")) {
+      clearKey();
+    }
+    return {
+      hook: "Could not generate summary — check your API key.",
+      summary: ep.desc,
+      takeaways: ["Check your API key is correct", "Get a key at console.anthropic.com", "Click AI Summary again to retry"],
+      whoFor: `Anyone interested in ${ep.topic === "startup" ? "entrepreneurship" : "AI & analytics"}.`,
+      skipIf: "You haven't set up your API key yet.",
+    };
+  }
+}
+
+// ─── KEY MODAL ────────────────────────────────────────────────────────────────
+
+function KeyModal({ onClose, onKeySaved }) {
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState("");
+
+  const handleSubmit = () => {
+    const trimmed = val.trim();
+    if (!trimmed.startsWith("sk-ant-")) { setErr("Key should start with sk-ant- — check and try again."); return; }
+    storeKey(trimmed);
+    resolveKey(trimmed);
+    if (onKeySaved) onKeySaved();
+    onClose();
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:28, maxWidth:420, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize:22, marginBottom:6 }}>🔑</div>
+        <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, fontWeight:700, color:"#1a1025", marginBottom:8 }}>Enter your Anthropic API Key</h2>
+        <p style={{ fontSize:12, color:"#888", lineHeight:1.7, marginBottom:16 }}>
+          AI summaries need an Anthropic API key. Saved for this browser session only — never stored permanently.<br/><br/>
+          Get a free key at <a href="https://console.anthropic.com" target="_blank" rel="noopener" style={{ color:"#7c3aed" }}>console.anthropic.com</a> → API Keys → Create Key.
+        </p>
+        <input
+          type="password"
+          placeholder="sk-ant-api03-..."
+          value={val}
+          onChange={e => { setVal(e.target.value); setErr(""); }}
+          onKeyDown={e => e.key === "Enter" && handleSubmit()}
+          style={{ width:"100%", padding:"10px 14px", border:"1.5px solid #ddd6fe", borderRadius:8, fontSize:13, fontFamily:"'DM Mono',monospace", outline:"none", marginBottom:8 }}
+        />
+        {err && <div style={{ fontSize:12, color:"#be123c", marginBottom:8 }}>{err}</div>}
+        <div style={{ display:"flex", gap:8, marginTop:4 }}>
+          <button onClick={handleSubmit} style={{ flex:1, padding:"10px", background:"#7c3aed", color:"#fff", border:"none", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer" }}>
+            Save & Generate
+          </button>
+          <button onClick={() => { resolveKey(null); onClose(); }} style={{ padding:"10px 16px", background:"#f5f5f5", color:"#888", border:"none", borderRadius:8, fontSize:13, cursor:"pointer" }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── COMPONENTS ───────────────────────────────────────────────────────────────
+
+const TOPIC = {
+  startup: { bg:"#fff4ee", text:"#b83a0a", label:"🚀 Entrepreneurship" },
+  ai:      { bg:"#edfaf4", text:"#1a6648", label:"🤖 Analytics & AI" },
+};
+
+function Dot({ on }) {
+  return <span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background: on?"#1a6648":"#b83a0a", marginRight:4, verticalAlign:"middle" }} />;
+}
+
+function SummaryPanel({ summary, loading }) {
+  if (loading) return (
+    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"16px 0 8px" }}>
+      <div style={{ display:"flex", gap:4 }}>
+        {[0,1,2].map(i => (
+          <span key={i} style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:"#7C3AED",
+            animation:`dotPulse 1.1s ${i*0.15}s infinite` }} />
+        ))}
+      </div>
+      <span style={{ fontSize:12, color:"#8b5cf6" }}>Generating summary…</span>
+    </div>
+  );
+  if (!summary) return null;
+  return (
+    <div className="fade-in" style={{ marginTop:16, borderRadius:12, border:"1px solid #ddd6fe", background:"#faf5ff", overflow:"hidden" }}>
+      {/* Hook */}
+      <div style={{ padding:"12px 16px", background:"#ede9fe", borderBottom:"1px solid #ddd6fe" }}>
+        <span style={{ fontSize:13, color:"#4c1d95", fontStyle:"italic", fontWeight:600 }}>"{summary.hook}"</span>
+      </div>
+      <div style={{ padding:"16px" }}>
+        {/* What it covers */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1.2px", color:"#a78bfa", marginBottom:6 }}>📝 What it covers</div>
+          <p style={{ fontSize:13, color:"#3b0764", lineHeight:1.75 }}>{summary.summary}</p>
+        </div>
+        {/* Takeaways */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1.2px", color:"#a78bfa", marginBottom:8 }}>✅ Key Takeaways</div>
+          {summary.takeaways.map((t,i) => (
+            <div key={i} style={{ display:"flex", gap:10, marginBottom:7 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:"#a78bfa", fontFamily:"'DM Mono',monospace", flexShrink:0, marginTop:2 }}>{i+1}.</span>
+              <span style={{ fontSize:13, color:"#3b0764", lineHeight:1.6 }}>{t}</span>
+            </div>
+          ))}
+        </div>
+        {/* Listen if / Skip if */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:10, padding:"10px 12px" }}>
+            <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1px", color:"#15803d", marginBottom:5 }}>🎯 Listen if</div>
+            <p style={{ fontSize:12, color:"#166534", lineHeight:1.6 }}>{summary.whoFor}</p>
+          </div>
+          <div style={{ background:"#fff1f2", border:"1px solid #fecdd3", borderRadius:10, padding:"10px 12px" }}>
+            <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1px", color:"#be123c", marginBottom:5 }}>⏭ Skip if</div>
+            <p style={{ fontSize:12, color:"#9f1239", lineHeight:1.6 }}>{summary.skipIf}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EpisodeCard({ ep, isTop, index, summaryCache, setSummaryCache }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const tc = TOPIC[ep.topic];
+  const listenUrl = ep.epUrl || ep.url;
+
+  const handleSummarise = async () => {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (summaryCache[ep.show]) return;
+    setLoading(true);
+    const s = await getSummary(ep);
+    setSummaryCache(c => ({ ...c, [ep.show]: s }));
+    setLoading(false);
+  };
+
+  return (
+    <div className="fade-in" style={{
+      background:"#fff", borderRadius:14,
+      border: isTop ? "2px solid #f97316" : "1px solid #e8e3dc",
+      boxShadow: isTop ? "0 4px 24px rgba(249,115,22,0.10)" : "0 1px 4px rgba(0,0,0,0.04)",
+      overflow:"hidden", transition:"box-shadow 0.2s",
+    }}>
+      {isTop && (
+        <div style={{ background:"linear-gradient(90deg,#f97316,#e11d48)", padding:"8px 16px", display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ fontSize:12, fontWeight:800, color:"#fff", textTransform:"uppercase", letterSpacing:"1.5px" }}>⭐ Today's Top Pick</span>
+        </div>
+      )}
+      <div style={{ padding: isTop ? "20px" : "16px 18px" }}>
+        {/* Meta row */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+          <span style={{ fontSize:10, fontWeight:700, padding:"3px 9px", borderRadius:20, background:tc.bg, color:tc.text }}>{tc.label}</span>
+          {ep.date && <span style={{ fontSize:11, color:"#bbb" }}>{ep.date}</span>}
+          {ep.dur  && <span style={{ fontSize:11, color:"#bbb" }}>· {ep.dur}</span>}
+        </div>
+        {/* Show name */}
+        <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1.5px", color:"#c0b8b0", marginBottom:4 }}>{ep.show}</div>
+        {/* Title */}
+        <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize: isTop ? 20 : 16, fontWeight:700, lineHeight:1.3, color:"#1a1025", marginBottom:8 }}>{ep.title}</h3>
+        {/* Desc */}
+        <p className={isTop ? "line-clamp-3" : "line-clamp-2"} style={{ fontSize:13, color:"#888", lineHeight:1.7, marginBottom:14 }}>{ep.desc}</p>
+        {/* Buttons */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+          <a href={listenUrl} target="_blank" rel="noopener noreferrer" style={{
+            display:"inline-flex", alignItems:"center", gap:6,
+            padding:"8px 16px", background:"#1a1025", color:"#fff",
+            fontSize:12, fontWeight:700, borderRadius:8, textDecoration:"none",
+            transition:"background 0.15s",
+          }}
+          onMouseOver={e=>e.currentTarget.style.background="#c8420a"}
+          onMouseOut={e=>e.currentTarget.style.background="#1a1025"}>
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 9,5 2,9"/></svg>
+            Listen
+          </a>
+          <button onClick={handleSummarise} style={{
+            display:"inline-flex", alignItems:"center", gap:6,
+            padding:"8px 16px", fontSize:12, fontWeight:700, borderRadius:8, cursor:"pointer",
+            border: open ? "none" : "1.5px solid #ddd6fe",
+            background: open ? "#7c3aed" : "#faf5ff",
+            color: open ? "#fff" : "#7c3aed",
+            transition:"all 0.15s",
+          }}>
+            {open ? "✦ Hide" : "✦ AI Summary"}
+          </button>
+        </div>
+        {open && <SummaryPanel summary={summaryCache[ep.show]} loading={loading && !summaryCache[ep.show]} />}
+      </div>
+    </div>
+  );
+}
+
+function MustCard({ item }) {
+  return (
+    <a href={item.url} target="_blank" rel="noopener noreferrer" style={{
+      display:"block", background:"#fff", border:"1px solid #e8e3dc", borderRadius:12,
+      padding:"14px 16px", textDecoration:"none", transition:"all 0.15s",
+    }}
+    onMouseOver={e=>{e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.08)"; e.currentTarget.style.borderColor="#c8b89a";}}
+    onMouseOut={e=>{e.currentTarget.style.boxShadow="none"; e.currentTarget.style.borderColor="#e8e3dc";}}>
+      <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+        <span style={{ fontSize:24, flexShrink:0 }}>{item.icon}</span>
+        <div>
+          <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"1px", color:"#b0a898", marginBottom:3 }}>{item.tag}</div>
+          <div style={{ fontSize:14, fontWeight:700, color:"#1a1025", marginBottom:4 }}>{item.name}</div>
+          <p style={{ fontSize:12, color:"#888", lineHeight:1.65 }}>{item.why}</p>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+
+function App() {
+  const [dailyEps, setDailyEps]   = useState([]);
+  const [weeklyEps, setWeeklyEps] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [summaryCache, setSummaryCache] = useState({});
+  const [filter, setFilter]       = useState("all");
+  const [tab, setTab]             = useState("daily");
+  const [statuses, setStatuses]   = useState({});
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  useEffect(() => { registerKeyModal(setShowKeyModal); }, []);
+
+  const loadShows = useCallback(async (shows, setter) => {
+    const results = await Promise.allSettled(shows.map(s => tryFetchRSS(s)));
+    const eps = []; const sts = {};
+    results.forEach((r, i) => {
+      const s = shows[i];
+      if (r.status === "fulfilled" && r.value) {
+        eps.push({ ...s, ...r.value }); sts[s.name] = "live";
+      } else {
+        const fb = FALLBACK[s.name];
+        if (fb) eps.push({ ...s, ...fb });
+        sts[s.name] = "cached";
+      }
+    });
+    setter(eps); setStatuses(st => ({ ...st, ...sts }));
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([loadShows(DAILY_SHOWS, setDailyEps), loadShows(WEEKLY_SHOWS, setWeeklyEps)])
+      .finally(() => setLoading(false));
+  }, [loadShows]);
+
+  const currentEps = (tab === "daily" ? dailyEps : weeklyEps).filter(e => filter === "all" || e.topic === filter);
+  const topPick = currentEps[0];
+  const rest    = currentEps.slice(1);
+  const today   = new Date().toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+  const currentShows = tab === "daily" ? DAILY_SHOWS : WEEKLY_SHOWS;
+
+  const FilterBtn = ({ f, label }) => (
+    <button onClick={() => setFilter(f)} style={{
+      padding:"6px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", transition:"all 0.15s",
+      border: filter===f ? "none" : "1.5px solid #444",
+      background: filter===f ? (f==="startup"?"#c8420a":f==="ai"?"#2a6b5c":"#f1ece4") : "transparent",
+      color: filter===f ? (f==="all"?"#1a1025":"#fff") : "#aaa",
+    }}>{label}</button>
+  );
+
+  const TabBtn = ({ t, label }) => (
+    <button onClick={() => setTab(t)} style={{
+      padding:"12px 16px", fontSize:12, fontWeight:600, border:"none", background:"none", cursor:"pointer", whiteSpace:"nowrap",
+      color: tab===t ? "#1a1025" : "#aaa",
+      borderBottom: tab===t ? "2px solid #c8420a" : "2px solid transparent",
+      transition:"all 0.15s",
+    }}>{label}</button>
+  );
+
+  return (
+    <div style={{ fontFamily:"'DM Sans',sans-serif" }}>
+      {showKeyModal && <KeyModal onClose={() => setShowKeyModal(false)} onKeySaved={() => setSummaryCache({})} />}
+      {/* ── HEADER ── */}
+      <div style={{ background:"#1a1025", borderBottom:"3px solid #c8420a", position:"sticky", top:0, zIndex:100 }}>
+        <div style={{ maxWidth:700, margin:"0 auto", padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+          <div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:900, color:"#fff" }}>
+              🎙 Daily<span style={{ color:"#c8420a" }}>Rec</span>
+            </div>
+            <div style={{ fontSize:10, color:"#888", textTransform:"uppercase", letterSpacing:"1.5px", marginTop:1 }}>{today}</div>
+          </div>
+          <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+            <FilterBtn f="all"     label="All" />
+            <FilterBtn f="startup" label="🚀 Startups" />
+            <FilterBtn f="ai"      label="🤖 AI" />
+            <button onClick={() => setShowKeyModal(true)} style={{
+              padding:"5px 10px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
+              background: getStoredKey() ? "#1a6648" : "#7c3aed",
+              color:"#fff", border:"none", letterSpacing:"0.3px"
+            }}>
+              {getStoredKey() ? "🔑 Key Set" : "🔑 Set API Key"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TABS ── */}
+      <div style={{ background:"#fff", borderBottom:"1px solid #e8e3dc", position:"sticky", top:55, zIndex:90 }}>
+        <div style={{ maxWidth:700, margin:"0 auto", padding:"0 20px", display:"flex" }}>
+          <TabBtn t="daily"  label="Daily Episodes" />
+          <TabBtn t="weekly" label="Weekly Deep Dives" />
+          <TabBtn t="must"   label="Must-Listen List" />
+        </div>
+      </div>
+
+      {/* ── CONTENT ── */}
+      <div style={{ maxWidth:700, margin:"0 auto", padding:"24px 20px 80px" }}>
+
+        {/* Daily / Weekly */}
+        {(tab === "daily" || tab === "weekly") && (
+          <>
+            {loading ? (
+              <div style={{ textAlign:"center", padding:"60px 20px" }}>
+                <div style={{ width:24, height:24, border:"2px solid #e8e3dc", borderTopColor:"#1a1025", borderRadius:"50%", animation:"spin 0.7s linear infinite", margin:"0 auto 14px" }} />
+                <p style={{ fontSize:13, color:"#aaa" }}>Fetching latest episodes from RSS feeds…</p>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:2 }}>
+                  <span style={{ fontSize:10, color:"#c0b8b0", textTransform:"uppercase", letterSpacing:"1.5px" }}>
+                    {tab==="daily" ? "Today's picks" : "This week's deep dives"}
+                  </span>
+                  <div style={{ flex:1, height:1, background:"#e8e3dc" }} />
+                </div>
+
+                {topPick && <EpisodeCard ep={topPick} isTop={true} index={0} summaryCache={summaryCache} setSummaryCache={setSummaryCache} />}
+                {rest.map((ep,i) => <EpisodeCard key={ep.show} ep={ep} isTop={false} index={i+1} summaryCache={summaryCache} setSummaryCache={setSummaryCache} />)}
+
+                {/* Source statuses */}
+                <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #e8e3dc" }}>
+                  <div style={{ fontSize:10, color:"#c0b8b0", textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Feed Sources</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+                    {currentShows.map(s => (
+                      <div key={s.name} style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, color:"#aaa" }}>
+                        <Dot on={statuses[s.name]==="live"} />
+                        {s.name}
+                        <span style={{ fontSize:10, color: statuses[s.name]==="live"?"#2a6b5c":"#c8420a" }}>
+                          {statuses[s.name]==="live" ? "live" : "cached"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Must-Listen */}
+        {tab === "must" && (
+          <div>
+            <div style={{ background:"#fff8f0", border:"1px solid #fde8cc", borderRadius:12, padding:"14px 16px", fontSize:13, color:"#8a5a2a", lineHeight:1.7, marginBottom:20 }}>
+              <strong style={{ display:"block", marginBottom:4, fontSize:11, textTransform:"uppercase", letterSpacing:"0.5px" }}>📌 Curated for your exact field</strong>
+              These 6 shows are picked specifically for your background in digital analytics, marketing, entrepreneurship, and building SoulSpace Kit. Not generic — these are what practitioners in your world actually listen to.
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {MUST_LISTENS.map(item => <MustCard key={item.name} item={item} />)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+</script>
+</body>
+</html>
