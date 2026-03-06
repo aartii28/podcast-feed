@@ -101,21 +101,6 @@ Summaries are generated instantly from the episode description — no API key, n
 
 It appears as an app icon on your home screen. Tap it every morning.
 
----
-
-## How to Update
-
-To refresh the app with the latest version:
-
-1. Go to [github.com/aartii28/podcast-feed](https://github.com/aartii28/podcast-feed)
-2. Click `index.html` → pencil icon ✏️
-3. Select all → delete → paste new code
-4. Click **Commit changes**
-
-Changes go live in ~30 seconds.
-
----
-
 ## Tech Stack
 
 | Layer | What |
